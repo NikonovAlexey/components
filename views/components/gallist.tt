@@ -1,0 +1,6 @@
+<h2>Перечень галерей изображений:</h2>
+[% WHILE (gl = gallist.next) %]
+<span>
+<a href="/gallery/[% gl.alias %]">[% gl.alias %]</a>
+</span>
+[% END %]
