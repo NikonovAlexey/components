@@ -1,0 +1,17 @@
+[% cnt = 0 %]
+<div id="top-gallery">
+[% WHILE (it = gallery.next) %]
+<img src="[% it.filename %]" width="601" height="182" border="0" alt="" />
+[% cnt = cnt + 1 %]
+[% END %]
+
+[% IF cnt == 0 %]
+<img src="/images/picture.jpg" width="601" height="182" border="0" alt=""/>
+[% END %]
+</div>
+
+<script>
+$(document).ready( function() {
+    $('#top-gallery').jqFancyTransitions({ width: 601, height: 182, effect: 'zipper' });
+});
+</script>

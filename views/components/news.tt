@@ -1,0 +1,1 @@
+[% WHILE (it = articles.next) %]<h2>[% it.title %]</h2><a href="/page/[% it.url %]">[% it.description %]</a>[% END %]

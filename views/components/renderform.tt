@@ -1,0 +1,8 @@
+[% form.render_openform %]
+[% form.render_items_as_table %]
+<div class="row buttons">[% form.render_buttons %]</div>
+[% form.render_closeform %]
+
+<script>$(function() {
+[% form.render_js %]
+});</script>

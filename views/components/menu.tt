@@ -1,0 +1,11 @@
+[% WHILE (it = menu.next); IF rights('admin') %]<span>
+<a href="/menu/[% it.id %]/delete" style="display: inline; padding: 0px;">[ - ]</a>
+<a href="/menu/[% it.id %]/edit" style="display: inline; padding: 0px;">[ e ]</a>[% END %]
+<a href="[% it.url %]"[% IF rights('admin') %] style="display: inline; padding: 0px;"[% END %]>[% it.name %]</a>
+[% IF rights('admin') %]</span>[% END; END %]
+
+[% IF rights('admin') %]
+<span>
+<a href="/menu/[% s %]/add" style="display: inline; padding: 0px;">[ + ]</a>
+</span>
+[% END %]
