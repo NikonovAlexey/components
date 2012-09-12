@@ -14,7 +14,7 @@ our $VERSION = '0.05';
 prefix '/menu';
 # TODO: при изменении пути модуля проверить все редиректы внутри модуля.
 
-fawform '/*/edit' => {
+fawform '/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/',
     layout      => 'edit', 
@@ -71,20 +71,20 @@ fawform '/*/edit' => {
     ],
     before      => sub {
         my $faw  = ${$_[1]};
-        my $path = ''.params->{splat}[0];
+        my $path = params->{url};
 
         if ($_[0] eq "get") {
             my $menu = schema->resultset('Menu')->find({ id => $path });
             if (defined($menu)) { 
                 # то следует подставить значения по умолчанию из БД.
                 $faw->map_params(
-                    id          => $menu->id,
-                    parent      => $menu->parent,
-                    name        => $menu->name,
-                    url         => $menu->url,
-                    weight      => $menu->weight,
-                    type        => $menu->type,
-                    alias       => $menu->alias,
+                    id          => $menu->id || "",
+                    parent      => $menu->parent->id || "",
+                    name        => $menu->name || "",
+                    url         => $menu->url || "",
+                    weight      => $menu->weight || "",
+                    type        => $menu->type || "",
+                    alias       => $menu->alias || "",
                 );
             } else {
                 # или же (когда такой записи ещё нет в БД) то просто установить

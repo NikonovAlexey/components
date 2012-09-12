@@ -127,7 +127,6 @@ fawform '/:url/edit' =>  {
     before      => sub {
         my $faw  = ${$_[1]};
         my $path = params->{url};
-        #my $path = params->{splat}[0];
 
         if ($_[0] eq "get") {
             my $image = schema->resultset('Image')->find({ id => $path });

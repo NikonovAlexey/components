@@ -85,7 +85,7 @@ any '/:url' => sub {
 };
 
 # правка документа 
-fawform '/*/edit' => {
+fawform '/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/',
     layout      => 'edit',
@@ -147,7 +147,7 @@ fawform '/*/edit' => {
         
         # Сначала мы прочтём $faw и текущий путь для редактирования
         my $faw  = ${$_[1]};
-        my $path = ''.params->{splat}[0];
+        my $path = params->{url};
         
         # В случае, если это действие get, 
         if ($_[0] eq "get") {
