@@ -15,7 +15,6 @@ prefix '/user';
 fawform '/login' => {
     template    => 'login',
     redirect    => '/',
-    layout      => 'main',
 
     formname    => 'loginform',
     fields      => [

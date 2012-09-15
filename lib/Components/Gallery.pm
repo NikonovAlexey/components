@@ -10,7 +10,7 @@ use Image::Magick;
 use Digest::MD5 qw(md5_hex);
 use FindBin qw($Bin);
 
-our $VERSION = '0.05';
+our $VERSION = '0.06';
 
 prefix '/gallery';
 
@@ -30,7 +30,7 @@ any '/:url' => sub {
     my $text    = schema->resultset('Image')->search({ alias => "$url" });
     
     if (defined($text)) {
-        template 'gallery' => {
+        template 'components/gallery' => {
             list    => $text,
             url     => $url,
         };
@@ -76,7 +76,6 @@ any '/:url/delete' => sub {
 fawform '/:url/edit' =>  {
     template    => 'components/renderform',
     redirect    => '/',
-    layout      => 'edit', 
 
     formname    => 'image-edit',
     fields      => [
@@ -204,16 +203,24 @@ hook before_template_render => sub {
 
 sub gallery {
     my ( $s, $t, $engine, $out );
+    my $items;
 
-    ( $s, $t ) = @_; $s ||= ""; return "" if ($s eq "");
+    ( $s, $t ) = @_; $s ||= ""; 
+    # это не меню - даже если мы ничего не получили на входе, 
+    # надо вывести хотя бы одну заглушку-изображение. А это поведение
+    # определяется в шаблоне
     $t ||= "top-banner";
     
-    my $items = schema->resultset('Image')->search({ 
+    if ($s ne "") {
+        $items = schema->resultset('Image')->search({ 
             alias => $s,
             type => $t
         }, {
             order_by => { -asc => 'id' },
         });
+    } else {
+        $items = "";
+    }
     $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
     $engine->process('components/gallery.tt', { s => $s, gallery => $items, rights => \&rights }, \$out);
 
@@ -227,7 +234,7 @@ CREATE TABLE IF NOT EXISTS images (
     imagename varchar(255), 
     remark    varchar(255), 
     type      varchar(32), 
-    alias     varchar(255) NOT NULL, 
+    alias     varchar(255) NOT NULL,
     PRIMARY KEY (id)
 ) CHARACTER SET = utf8;
 |;

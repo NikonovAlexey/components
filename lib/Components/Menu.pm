@@ -17,7 +17,6 @@ prefix '/menu';
 fawform '/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/',
-    layout      => 'edit', 
 
     formname    => 'menu-edit',
     fields      => [

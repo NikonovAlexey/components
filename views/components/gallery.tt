@@ -1,6 +1,6 @@
 [% cnt = 0 %]
 <div id="top-gallery">
-[% WHILE (it = gallery.next) %]
+[% WHILE (it = list.next) %]
 <img src="[% it.filename %]" width="601" height="182" border="0" alt="" />
 [% cnt = cnt + 1 %]
 [% END %]
