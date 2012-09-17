@@ -1,0 +1,1 @@
+[% IF recursion_level > 0 %]<a href="[% currentmenu.url %]">[% END; currentmenu.name; IF recursion_level > 0 %]</a> ::[% END %]

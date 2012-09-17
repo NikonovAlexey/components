@@ -14,9 +14,10 @@ our $VERSION = '0.06';
 
 prefix '/gallery';
 
-any '/' => sub {
+any '/list' => sub {
     my $gallist = schema->resultset('Image')->search(undef, {
-        select => [ { distinct => 'alias' } ],
+        select => [ 'alias', 'type' ],
+        distinct => 1,
         order_by => 'alias',
     });
 
@@ -30,7 +31,7 @@ any '/:url' => sub {
     my $text    = schema->resultset('Image')->search({ alias => "$url" });
     
     if (defined($text)) {
-        template 'components/gallery' => {
+        template 'gallery' => {
             list    => $text,
             url     => $url,
         };

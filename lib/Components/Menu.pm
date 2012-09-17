@@ -148,6 +148,7 @@ any '/:url/delete' => sub {
 hook before_template_render => sub {
     my ( $tokens ) = @_;
     $tokens->{menu} = \&menu;
+    $tokens->{menu_position} = \&menu_position;
 };
 
 sub menu {
@@ -170,6 +171,40 @@ sub menu {
     }
 
     return $out;
+};
+
+sub menu_position {
+    my ( $s, $recursion_level, $engine );
+    my ( $parent, $parentid );
+    my ( $out, $out2 ) = ( "", "" );
+
+    # ничего не выводим, если алиас пустой
+    ( $s, $recursion_level ) = @_; $s ||= ""; return "" if ($s eq "");
+    $recursion_level ||= 0;
+    
+    # текущий элемент по его алиасу
+    my $current     = schema->resultset('Menu')->find({ alias => $s });
+    
+    # алиас элемента-родителя 
+    # если больше нуля, то можно спрашивать про алиас и отрисовывать родителя 
+    if (defined($current->parent) && defined($current->parent->id)) {
+        $parentid   = $current->parent->id || 0;
+        $parent     = schema->resultset('Menu')->find({ id => $parentid });
+        $out2       = menu_position($parent->alias, $recursion_level+1);
+
+        if ($current->name ne "") {
+            $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
+            $engine->process('components/menu_position.tt', { 
+                s => $s,
+                recursion_level => $recursion_level,
+                currentmenu => $current },
+                \$out);
+        } else {
+            $out = "";
+        }
+    }
+
+    return $out2 . $out;
 };
 
 our $createsql = qq|
