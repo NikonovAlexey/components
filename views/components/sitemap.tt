@@ -1,0 +1,16 @@
+<h1>На нашем сайте вы можете найти следующие разделы:</h1>
+<ul>
+[% FOREACH tt IN top.menus %]
+<li><a href="[% tt.url %]">[% tt.name %]</a>
+    [% FOREACH t2 IN tt.menus %]
+    <p style="text-indent: 1em;"><a href="[% t2.url %]">[% t2.name %]</a>;</p>
+        [% FOREACH t3 IN t2.menus %]
+        <p style="text-indent: 2em;"><a href="[% t3.url %]">[% t3.name %]</a>;</p>
+            [% FOREACH t4 IN t3.menus %]
+            <p style="text-indent: 3em;"><a href="[% t4.url %]">[% t4.name %]</a>;</p>
+            [% END %]
+        [% END %]
+    [% END %]
+<br /><br /></li>
+[% END %]
+</ul>
