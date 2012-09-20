@@ -14,6 +14,16 @@ our $VERSION = '0.05';
 prefix '/menu';
 # TODO: при изменении пути модуля проверить все редиректы внутри модуля.
 
+any '/sitemap' => sub {
+    template 'components/sitemap', {
+        top => schema->resultset('Menu')->find({ 
+            alias => 'left'
+        }, {
+            order_by => 'weight'
+        })
+    };
+};
+
 fawform '/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/',
@@ -71,7 +81,8 @@ fawform '/:url/edit' => {
     before      => sub {
         my $faw  = ${$_[1]};
         my $path = params->{url};
-
+        $faw->{action} =~ s/:url/$path/;
+        
         if ($_[0] eq "get") {
             my $menu = schema->resultset('Menu')->find({ id => $path });
             if (defined($menu)) { 
@@ -93,6 +104,8 @@ fawform '/:url/edit' => {
         };
     },
     after       => sub { if ($_[0] =~ /^post$/i) {
+        #my $faw  = ${$_[1]};
+        #$faw->{redirect} = params->{url} || "/";
         my $menu = schema->resultset('Menu')->find({ id => params->{id} }) || undef;
         if (defined( $menu )) {
             $menu->update({
@@ -113,6 +126,7 @@ fawform '/:url/edit' => {
                 alias   => params->{alias} || "",
             });
         };
+
     } },
 };
 
@@ -183,11 +197,11 @@ sub menu_position {
     $recursion_level ||= 0;
     
     # текущий элемент по его алиасу
-    my $current     = schema->resultset('Menu')->find({ alias => $s });
+    my $current     = schema->resultset('Menu')->find({ alias => $s }) || undef;
     
     # алиас элемента-родителя 
     # если больше нуля, то можно спрашивать про алиас и отрисовывать родителя 
-    if (defined($current->parent) && defined($current->parent->id)) {
+    if (defined($current) && defined($current->parent) && defined($current->parent->id)) {
         $parentid   = $current->parent->id || 0;
         $parent     = schema->resultset('Menu')->find({ id => $parentid });
         $out2       = menu_position($parent->alias, $recursion_level+1);

@@ -13,7 +13,7 @@ our $VERSION = '0.05';
 prefix '/user';
 
 fawform '/login' => {
-    template    => 'login',
+    template    => 'components/renderform',
     redirect    => '/',
 
     formname    => 'loginform',
@@ -55,5 +55,17 @@ any '/logout' => sub {
     session user => { roles => "guest" };
     redirect '/';
 };
+
+our $createsql = qq|
+CREATE TABLE users (
+    id       int(10) NOT NULL AUTO_INCREMENT, 
+    login    varchar(32) NOT NULL UNIQUE, 
+    password varchar(64) NOT NULL UNIQUE, 
+    role     varchar(16) DEFAULT 'user' NOT NULL, 
+    email    varchar(255), 
+    fullname varchar(255), 
+    PRIMARY KEY (id)
+) CHARACTER SET = utf8;
+|;
 
 true;
