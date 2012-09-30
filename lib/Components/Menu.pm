@@ -24,7 +24,7 @@ any '/sitemap' => sub {
     };
 };
 
-fawform '/:url/edit' => {
+fawform '/:id/edit' => {
     template    => 'components/renderform',
     redirect    => '/',
 
@@ -33,8 +33,8 @@ fawform '/:url/edit' => {
     {
         type    => 'text',
         name    => 'id',
-        label   => 'id',
-        note    => 'идентификатор пункта меню (число)'
+        label   => 'идентификатор',
+        note    => 'уникальный номер записи меню в таблицах'
     },
     {
         type    => 'text',
@@ -51,7 +51,7 @@ fawform '/:url/edit' => {
         type    => 'text',
         name    => 'url',
         label   => 'ссылка меню',
-        note    => 'переход по щелчку на меню'
+        note    => 'к странице по щелчку на меню'
     },
     {
         type    => 'text',
@@ -64,7 +64,6 @@ fawform '/:url/edit' => {
         name    => 'type',
         label   => 'тип меню',
     },
-# TODO: при изменении пути модуля проверить все редиректы внутри модуля.
     {
         type    => 'text',
         name    => 'alias',
@@ -77,64 +76,52 @@ fawform '/:url/edit' => {
             name        => 'submit',
             value       => 'Применить'
         },
+        {
+            name        => 'submit',
+            value       => 'Отменить'
+        },
     ],
     before      => sub {
         my $faw  = ${$_[1]};
-        my $path = params->{url};
-        $faw->{action} =~ s/:url/$path/;
+        my $id   = params->{id};
+        my $path = $faw->fieldset(":id" => $id);
+        
+        my $menu = schema->resultset('Menu')->find({ id => $id });
         
         if ($_[0] eq "get") {
-            my $menu = schema->resultset('Menu')->find({ id => $path });
             if (defined($menu)) { 
-                # то следует подставить значения по умолчанию из БД.
-                $faw->map_params(
-                    id          => $menu->id || "",
-                    parent      => $menu->parent->id || "",
-                    name        => $menu->name || "",
-                    url         => $menu->url || "",
-                    weight      => $menu->weight || "",
-                    type        => $menu->type || "",
-                    alias       => $menu->alias || "",
-                );
-            } else {
-                # или же (когда такой записи ещё нет в БД) то просто установить
-                # текущий путь, т.е. использовать вычисляемые значения по умолчанию.
-                #$faw->map_params(url => $path);
+                $faw->map_params_by_names($menu, qw(
+                    id name url weight type alias
+                ));
+                $faw->map_params(parent => $menu->parent->id);
             };
+        } elsif ($_[0] eq "post") {
+            return 1 if (params->{submit} eq "Отменить");
+            my $l;
+            try {
+                $l = $menu->update({
+                    parent  => params->{parent},
+                    name    => params->{name},
+                    url     => params->{url},
+                    weight  => params->{weight},
+                    type    => params->{type},
+                    alias   => params->{alias}
+                });
+            } catch { 
+                warning " BOOOO!!! " . dump($l);
+                return 0;
+            };
+            warning "SUCCESS!";
+            return 1;
         };
     },
-    after       => sub { if ($_[0] =~ /^post$/i) {
-        #my $faw  = ${$_[1]};
-        #$faw->{redirect} = params->{url} || "/";
-        my $menu = schema->resultset('Menu')->find({ id => params->{id} }) || undef;
-        if (defined( $menu )) {
-            $menu->update({
-                parent  => params->{parent} || "",
-                name    => params->{name} || "",
-                url     => params->{url} || "",
-                weight  => params->{weight} || "",
-                type    => params->{type} || "",
-                alias   => params->{alias} || "",
-            });
-        } else {
-            schema->resultset('Menu')->create({
-                parent  => params->{parent} || "",
-                name    => params->{name} || "",
-                url     => params->{url} || "",
-                weight  => params->{weight} || "",
-                type    => params->{type} || "",
-                alias   => params->{alias} || "",
-            });
-        };
-
-    } },
 };
 
-any '/:url/add' => sub {
+any '/:id/add' => sub {
     my ($parent, $item);
 
     if ( rights('admin') ) { 
-        $parent = schema->resultset('Menu')->find({ alias => params->{url} })->id;
+        $parent = schema->resultset('Menu')->find({ alias => params->{id} })->id;
         $item   = schema->resultset('Menu')->create({
             parent  => $parent || undef,
             name    => 'new menu item',
@@ -149,9 +136,9 @@ any '/:url/add' => sub {
     };
 };
 
-any '/:url/delete' => sub {
-    my $item   = schema->resultset('Menu')->find({ id => params->{url} }) || undef;
-    my $parent = "/page/" . $item->alias || "/";
+any '/:id/delete' => sub {
+    my $item   = schema->resultset('Menu')->find({ id => params->{id} }) || undef;
+    my $parent = "/page/" . $item->alias || "";
     if ( rights('admin') ) { 
         if (defined($item)) { $item->delete; };
     };

@@ -11,6 +11,8 @@ use Digest::MD5 qw(md5_hex);
 use Data::Dump qw(dump);
 use FindBin qw($Bin);
 
+use Try::Tiny;
+
 our $VERSION = '0.05';
 
 prefix '/page';
@@ -28,8 +30,6 @@ post '/uploadimage' => sub {
     my $destpath =  "/images/uploaded/";
     my $destfile = "" . md5_hex($filetemp . $filesize);
     my $abspath  = $Bin . "/../public" . $destpath;
-    
-    #move($filetemp, $abspath . $destfile);
     
     # прочтём рисунок и его параметры
     $image      = Image::Magick->new;
@@ -87,7 +87,7 @@ any '/:url' => sub {
 # правка документа 
 fawform '/:url/edit' => {
     template    => 'components/renderform',
-    redirect    => '/',
+    redirect    => '/page/:url',
     
     formname    => 'editpage',
     fields      => [ 
@@ -148,9 +148,10 @@ fawform '/:url/edit' => {
         my $faw  = ${$_[1]};
         my $path = params->{url};
         
+        my $text = schema->resultset('Article')->find({ url => $path });
+        
         # В случае, если это действие get, 
         if ($_[0] eq "get") {
-            my $text = schema->resultset('Article')->find({ url => $path });
             if (defined($text)) { 
                 # то следует подставить значения по умолчанию из БД.
                 $faw->map_params(
@@ -169,14 +170,12 @@ fawform '/:url/edit' => {
             # и поместить ссылку на вычисляемый путь в эту форму.
             $faw->{action} = request->path;
         }
-        # Кроме того, мы можем указать вычисляемый путь для перехода при записи/отмене
-        $faw->{redirect} = "/page/$path";
-    },
-    after       => sub { if ($_[0] eq "post") {
-        my $text   = schema->resultset('Article')->find({ 
-            url  => params->{url},
-        }) || undef;
-        if (defined($text)) {
+        
+        if ($_[0] eq "post") {
+            # выход по кнопке "отмена" = reset;
+            return (1, "/page/$path") if defined(params->{'reset'});
+            #
+            try {
             $text->update({
                 url         => params->{url},
                 title       => params->{title} || "",
@@ -185,17 +184,14 @@ fawform '/:url/edit' => {
                 type        => params->{type} || "",
                 text        => params->{content} || "",
             });
-        } else {
-            schema->resultset('Article')->create({
-                url         => params->{url},
-                title       => params->{title} || "",
-                description => params->{description} || "",
-                author      => params->{author} || "",
-                type        => params->{type} || "",
-                text        => params->{content} || "",
-            });
+            } catch {
+                return 0;
+            };
+            return (1, "/page/$path");
         }
-    } },
+        # Кроме того, мы можем указать вычисляемый путь для перехода при записи/отмене
+        $faw->{redirect} = "/page/$path";
+    },
 };
 
 

@@ -7,6 +7,7 @@ use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
 
 use Digest::MD5 qw(md5_hex);
+use Try::Tiny;
 
 our $VERSION = '0.05';
 
@@ -38,14 +39,31 @@ fawform '/login' => {
         },
     ],
     after       => sub { if ($_[0] eq "post") {
-        my $pass = params->{password};
+        my $uname = params->{username};
+        my $upass = params->{password};
+        my $salt    = config->{salt} || "";
         # выкинуть нафиг все не-латинские символы
-        $pass =~ /([A-Za-z0-9]*)/; $pass = $1 || "";
-        $pass = md5_hex(md5_hex($pass) . "MaNneopLAN");
-        session user => { roles => "guest" };
-        if ( $pass eq config->{admin_password} ) {
-            session user => {roles => "admin"};
-            #warning " =================================== ::::::::::::::::: change session status";
+        $upass =~ /([A-Za-z0-9]*)/; $upass = $1 || "";
+        $upass = md5_hex(md5_hex($upass) . $salt);
+        my $user = schema->resultset('User')->find({
+            login => $uname,
+            password => $upass 
+        });
+
+        if ( (defined $user) && ( $user->id > 0 ) ) {
+            session user => {
+                login => $user->login,
+                roles => $user->role,
+                email => $user->email,
+                fullname => $user->fullname,
+                };
+        } else {
+            session user => {
+                login => "",
+                roles => "guest",
+                email => "",
+                fullname => "guest",
+            };
         };
     } },
 };
@@ -54,6 +72,99 @@ any '/logout' => sub {
     #session->destroy;
     session user => { roles => "guest" };
     redirect '/';
+};
+
+any '/list' => sub {
+    my $ulist = schema->resultset('User')->search({ 
+        id => { '>' => 0 }
+    }, {
+        order_by => { -desc => 'id' }
+    });
+
+    template 'components/userlist' => {
+        userslist => $ulist
+    };
+};
+
+any '/add' => sub {
+    my $ulist = schema->resultset('User')->create({
+        login   => 'new',
+        role    => 'user',
+    });
+
+    redirect '/';
+};
+
+fawform '/:id/edit' => {
+    template    => 'components/renderform',
+    redirect    => prefix . '/list',
+
+    formname    => 'edituser',
+    fields      => [
+        {
+            type        => 'text',
+            name        => 'login',
+            label       => 'Логин',
+            note        => 'Измените логин для входа в систему.',
+        },
+        {
+            type        => 'text',
+            name        => 'role',
+            label       => 'Роль',
+            note        => 'смените роль пользователя.',
+        },
+        {
+            type        => 'text',
+            name        => 'email',
+            label       => 'E-mail',
+            note        => 'задайте почтовый ящик пользователя.',
+        },
+        {
+            type        => 'text',
+            name        => 'fullname',
+            label       => 'ФИО',
+            note        => 'полное величание человека.',
+        },
+    ],
+    buttons     => [
+        {
+            name        => 'submit',
+            value       => 'изменить'
+        },
+        {
+            name        => 'submit',
+            value       => 'отменить'
+        },
+    ],
+    before      => sub {
+        my $faw  = ${$_[1]};
+        my $id   = params->{id};
+        my $path = $faw->fieldset(":id" => $id);
+        
+        my $user = schema->resultset('User')->find({ id => $id });
+        
+        if ($_[0] eq "get") {
+            if (defined($user)) { 
+                $faw->map_params_by_names(
+                    $user, qw(login role email fullname));
+            };
+        };
+
+        if ($_[0] eq "post") {
+            # в случае ошибки в данных 0, в случае успеха = 1
+            try {
+                $user->update({
+                    login   => params->{login},
+                    role    => params->{role},
+                    email   => params->{email},
+                    fullname=> params->{fullname}
+                });
+            } catch {
+                return 0;
+            };
+            return 1;
+        };
+    },
 };
 
 our $createsql = qq|
