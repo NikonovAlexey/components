@@ -88,31 +88,22 @@ fawform '/:id/edit' => {
         
         my $menu = schema->resultset('Menu')->find({ id => $id });
         
-        if ($_[0] eq "get") {
-            if (defined($menu)) { 
-                $faw->map_params_by_names($menu, qw(
-                    id name url weight type alias
-                ));
-                $faw->map_params(parent => $menu->parent->id);
-            };
-        } elsif ($_[0] eq "post") {
-            return 1 if (params->{submit} eq "Отменить");
-            my $l;
-            try {
-                $l = $menu->update({
-                    parent  => params->{parent},
-                    name    => params->{name},
-                    url     => params->{url},
-                    weight  => params->{weight},
-                    type    => params->{type},
-                    alias   => params->{alias}
-                });
-            } catch { 
-                warning " BOOOO!!! " . dump($l);
-                return 0;
-            };
-            warning "SUCCESS!";
-            return 1;
+        if ( ($_[0] eq "get") && defined($menu) ) { 
+            $faw->map_params_by_names($menu, qw(
+                id parent name url weight type alias
+        )); };
+        
+        if ($_[0] eq "post") {
+            return (1, params->{url}) if (params->{submit} eq "Отменить");
+            $menu->update({
+                parent  => params->{parent},
+                name    => params->{name},
+                url     => params->{url},
+                weight  => params->{weight},
+                type    => params->{type},
+                alias   => params->{alias}
+            });
+            return (1, params->{url});
         };
     },
 };

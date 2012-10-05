@@ -97,7 +97,7 @@ any '/add' => sub {
 
 fawform '/:id/edit' => {
     template    => 'components/renderform',
-    redirect    => prefix . '/list',
+    redirect    => '/user/list',
 
     formname    => 'edituser',
     fields      => [
@@ -152,16 +152,12 @@ fawform '/:id/edit' => {
 
         if ($_[0] eq "post") {
             # в случае ошибки в данных 0, в случае успеха = 1
-            try {
-                $user->update({
-                    login   => params->{login},
-                    role    => params->{role},
-                    email   => params->{email},
-                    fullname=> params->{fullname}
-                });
-            } catch {
-                return 0;
-            };
+            $user->update({
+                login   => params->{login},
+                role    => params->{role},
+                email   => params->{email},
+                fullname=> params->{fullname}
+            });
             return 1;
         };
     },

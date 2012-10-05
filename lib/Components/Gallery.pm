@@ -9,6 +9,7 @@ use Dancer::Plugin::uRBAC;
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
 use FindBin qw($Bin);
+use Try::Tiny;
 
 our $VERSION = '0.06';
 
@@ -51,7 +52,7 @@ any '/:url/add' => sub {
             filename    => '',
             imagename   => '',
             remark      => '',
-            type        => 'top-banner',
+            type        => "$url",
             alias       => "$url",
         });
         redirect "gallery/" .$me->id. "/edit";
@@ -74,8 +75,8 @@ any '/:url/delete' => sub {
     redirect $parent;
 };
 
-fawform '/:url/edit' =>  {
-    template    => 'components/renderform',
+fawform '/:id/edit' =>  {
+    template    => 'components/renderform-gallery',
     redirect    => '/',
 
     formname    => 'image-edit',
@@ -84,38 +85,44 @@ fawform '/:url/edit' =>  {
         type    => 'text',
         name    => 'id',
         label   => 'id',
-        note    => 'идентификатор фотографии (число)'
+        note    => 'идентификатор фотографии (число)',
+        default => '',
     },
     {
         type    => 'text',
         name    => 'filename',
         label   => 'имя файла',
         note    => 'имя файла фотографии на сервере',
+        default => '',
     },
     {
         type    => 'upload',
         name    => 'imagename',
         label   => 'название фотографии',
-        note    => 'название оригинала фотографии'
+        note    => 'название оригинала фотографии',
+        default => '',
     },
     {
         type    => 'text',
         name    => 'remark',
         label   => 'комментарий',
         note    => 'комментарий, который может выводиться в подписи к фото',
+        default => '',
     },
     {
         type    => 'text',
         name    => 'type',
         label   => 'тип фотографии',
         note    => 'к какому типу изображений относится данная картинка (доп.
-        свойство для фильтрации)'
+        свойство для фильтрации)',
+        default => '',
     },
     {
         type    => 'text',
         name    => 'alias',
         label   => 'псевдоним раздела',
         note    => 'к какому разделу прикрепляется эта фотография',
+        default => '',
     }
     ],
     buttons     => [
@@ -126,74 +133,83 @@ fawform '/:url/edit' =>  {
     ],
     before      => sub {
         my $faw  = ${$_[1]};
-        my $path = params->{url};
-
+        my $id   = params->{id};
+        my $path = $faw->fieldset(":id" => $id);
+        
+        my $imagegall = schema->resultset('Image')->find({ id => $id });
+        my $imagefile = "";
+        my $imagename = "";
+        
         if ($_[0] eq "get") {
-            my $image = schema->resultset('Image')->find({ id => $path });
-            if (defined($image)) { 
+            if (defined($imagegall)) { 
                 # то следует подставить значения по умолчанию из БД.
                 $faw->map_params(
-                    id          => $image->id,
-                    filename    => $image->filename,
-                    imagename   => $image->imagename,
-                    remark      => $image->remark,
-                    type        => $image->type,
-                    alias       => $image->alias,
+                    id          => $imagegall->id || "",
+                    filename    => $imagegall->filename || "",
+                    imagename   => $imagegall->imagename || "",
+                    remark      => $imagegall->remark || "",
+                    type        => $imagegall->type || "",
+                    alias       => $imagegall->alias || "",
                 );
-                $faw->{redirect} = "/gallery/" . $image->alias;
+                #$faw->{redirect} = "/gallery/" . $imagegall->alias;
             } else {
-                # или же (когда такой записи ещё нет в БД) то просто установить
-                # текущий путь, т.е. использовать вычисляемые значения по умолчанию.
-                #$faw->map_params(url => $path);
+                $faw->map_params(
+                    id          => "",
+                    filename    => "",
+                    imagename   => "",
+                    remark      => "",
+                    type        => "",
+                    alias       => "",
+                );
             };
         };
-        $faw->{action}   = "/gallery/$path/edit";
-    },
-    after       => sub { if ($_[0] =~ /^post$/i) {
-        my $imagegall = schema->resultset('Image')->find({ id => params->{id} }) || undef;
-        if (defined( request->{uploads}->{imagename} )) {
-            my $upload = request->{uploads}->{imagename};
-            
-            my $filename = $upload->{filename};
-            my $filetemp = $upload->{tempname};
-            my $filesize = $upload->{size};
-            my ( $image, $x, $y, $k );
-            
-            $filename    =~ /\.(\w{3})/;
-            my $fileext  = lc($1) || "png";
-            
-            my $destpath =  "/images/galleries/";
-            my $destfile = "" . md5_hex($filetemp . $filesize);
-            my $abspath  = $Bin . "/../public" . $destpath;
-            
-            #move($filetemp, $abspath . $destfile);
-            
-            # прочтём рисунок и его параметры
-            $image      = Image::Magick->new;
-            $image->Read($filetemp);
-            # масштабируем и запишем
-            $image->Resize(geometry => '601x182');
-            $image->Write($abspath . $destfile . ".$fileext");
-            
-            if (defined( $imagegall )) {
+
+        if ($_[0] eq "post") {
+            if (defined( request->{uploads}->{imagename} )) {
+                my $upload = request->{uploads}->{imagename};
+                
+                my $filename = $upload->{filename};
+                my $filetemp = $upload->{tempname};
+                my $filesize = $upload->{size};
+                my $galtype  = params->{type} || "common";
+                my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
+                my ( $image, $x, $y, $k );
+                
+                $filename    =~ /\.(\w{3})/;
+                my $fileext  = lc($1) || "png";
+                
+                my $destpath =  "/images/galleries/" . $galtype . "/";
+                my $destfile = "" . md5_hex($filetemp . $filesize);
+                my $abspath  = $Bin . "/../public" . $destpath;
+                if ( ! -e $abspath ) { mkdir $abspath; }
+                
+                #move($filetemp, $abspath . $destfile);
+                
+                # прочтём рисунок и его параметры
+                $image      = Image::Magick->new;
+                $image->Read($filetemp);
+                # масштабируем и запишем
+                $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
+                $image->Write($abspath . $destfile . ".$fileext");
+
+                $imagefile = $destpath . $destfile . "." . $fileext;
+                $imagename = params->{imagename};
                 $imagegall->update({
-                    filename   => "${destpath}${destfile}.$fileext" || "",
-                    imagename   => params->{imagename} || "",
-                    remark      => params->{remark} || "",
-                    type        => params->{type} || "",
-                    alias       => params->{alias} || "",
-                });
-            } else {
-                schema->resultset('Image')->create({
-                    filename   => "${destpath}${destfile}.$fileext" || "",
-                    imagename   => params->{imagename} || "",
-                    remark      => params->{remark} || "",
-                    type        => params->{type} || "",
-                    alias       => params->{alias} || "",
+                    filename    => $imagefile,
+                    imagename   => $imagename,
                 });
             };
+                
+            $imagegall->update({
+                remark      => params->{remark},
+                type        => params->{type},
+                alias       => params->{alias},
+            });
+            return (1, "/gallery/" . params->{alias});
         };
-    } },
+        
+        $faw->{action}   = $path;
+    },
 };
 
 # Подготовка общей инфы для всех страничек

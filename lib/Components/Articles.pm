@@ -97,6 +97,7 @@ fawform '/:url/edit' => {
             name        => 'title',
             label       => 'Заголовок статьи',
             note        => 'Укажите заголовок статьи',
+            default     => '',
         },
         {
             required    => 1,
@@ -104,28 +105,33 @@ fawform '/:url/edit' => {
             name        => 'url',
             label       => 'Адрес на сайте:',
             note        => 'Укажите здесь URL странички на сайте.',
+            default     => '',
         },
         {
             type        => 'text',
             name        => 'description',
             label       => 'Краткое описание',
+            default     => '',
         },
         {
             type        => 'text',
             name        => 'author',
             label       => 'Автор статьи',
+            default     => '',
         },
         {
             type        => 'text',
             name        => 'type',
             label       => 'Тип материала',
             note        => 'Укажите тип материала "news", если это новость',
+            default     => '',
         },
         {
             required    => 1,
             type        => 'wysiwyg',
             name        => 'content',
             label       => ' ',
+            default     => '',
         },
     ],
     buttons     => [
@@ -194,6 +200,18 @@ fawform '/:url/edit' => {
     },
 };
 
+any '/:tag/add' => sub {
+    my $tag = params->{tag};
+    try {
+        schema->resultset('Article')->create({ 
+            url     => $tag,
+            author  => session->{user}->{fullname},
+        });
+    } catch {
+        warning " article with $tag already defined ";
+    };
+    redirect "/page/$tag/edit";
+};
 
 # Подготовка общей инфы для всех страничек
 hook before_template_render => sub {
