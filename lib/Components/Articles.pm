@@ -1,5 +1,6 @@
 package Articles;
 
+use utf8;
 use Dancer ':syntax';
 
 use Dancer::Plugin::DBIC;
@@ -10,69 +11,102 @@ use Image::Magick;
 use Digest::MD5 qw(md5_hex);
 use Data::Dump qw(dump);
 use FindBin qw($Bin);
+use Encode;
 
 use Try::Tiny;
 
 our $VERSION = '0.05';
 
-prefix '/page';
+prefix '/';
 
-post '/uploadimage' => sub {
-    my $upload = request->{uploads}->{image};
-    my $filename = $upload->{filename};
-    my $filetemp = $upload->{tempname};
-    my $filesize = $upload->{size};
-    my ( $image, $x, $y, $k );
+=head ARTICLES
 
-    $filename    =~ /\.(\w{3})/;
-    my $fileext  = lc($1) || "png";
+=cut
 
-    my $destpath =  "/images/uploaded/";
-    my $destfile = "" . md5_hex($filetemp . $filesize);
-    my $abspath  = $Bin . "/../public" . $destpath;
+sub img_by_num {
+    my ( $src, $id ) = @_;
+    my $image;
+    my $file = "";
+
+    try {
+        $image = schema->resultset('Image')->find({ id => $id }) || 0;
+        $file = $image->filename || "";
+    } catch {
+        return "$src$id";
+    };
     
-    # прочтём рисунок и его параметры
-    $image      = Image::Magick->new;
-    $image->Read($filetemp);
-    ( $x, $y )  = ($image->Get('width'), $image->Get('height'));
+    return "$src$id" if $file eq "";
+    return "<img src='$file'>";
+}
 
-    # вычислим коэффициент уменьшения для полноразмерного эскиза
-    $k          = ( $x / 1024 > $y / 768 ) ? $x / 1024 : $y / 768;
-    $k          = ( $k < 1 ) ? 1 : $k;
-    # масштабируем и запишем
-    $image->Resize(geometry => $x/$k . 'x' . $y/$k );
-    $image->Write($abspath . $destfile . ".$fileext");
+sub link_to_text {
+    my ( $src, $link ) = @_;
+    return "<a href='/page/$link'>$link</a>";
+}
 
-    # то же - для превью (вставки в текст документа);
-    $k          = ( $x / 320 > $y / 240 ) ? $x / 320 : $y / 240;
-    $k          = ( $k < 1 ) ? 1 : $k;
-    $image->Resize(geometry => $x/$k . 'x' . $y/$k );
-    $image->Write($abspath . $destfile . "_sm.$fileext");
+sub parsepage {
+    my $text = $_[0];
     
-    schema->resultset('Image')->create({
-        filename    => "${destpath}${destfile}.$fileext" || "",
-        imagename   => request->{uploads}->{image}->{filename} || "",
-        remark      => "",
-        type        => "matherial",
-        alias       => "matherial",
+    $text =~ s/(img\s*=\s*)(\d*)/&img_by_num($1,$2)/egm;
+    $text =~ s/(link\s*=\s*)(\w*)/&link_to_text($1,$2)/egm;
+    return $text;
+}
+
+any '/page/sitemap.xml' => sub {
+    my $articles = schema->resultset('Article')->search({
+    }, {
+        order_by => 'id',
+        columns  => 'url',
     });
-    
-    my $z = { upload => { image => { width => $x/$k }, links => { 
-        original => $destpath . $destfile . "_sm.$fileext",
-        lightboxed => $destpath . $destfile . ".$fileext", 
-    } } };
-    
-    content_type 'application/json';
-    return to_json($z);
+    template 'components/sitemap_xml', {
+        pages => $articles
+    }, {
+        layout => ""
+    };
 };
 
-any '/:url' => sub {
+any '/page/news.xml' => sub {
+    my $lastdate = config->{components}->{documents}->{newsfresh} || 10 * 86400;
+    my $newsfresh = time - $lastdate;
+    
+    my $articles = schema->resultset('Article')->search({
+        -or => [
+            -and => [
+                type    => 'news',
+                lastmod => { '>=' => $newsfresh },
+            ],
+            type    => 'fix',
+        ]
+    }, {
+        order_by => { -desc => 'lastmod' },
+        columns  => [ qw/url title description lastmod/ ],
+    });
+    template 'components/newsfeed_xml', {
+        now     => time,
+        pages   => $articles
+    }, {
+        layout  => ""
+    };
+};
+
+any '/page/listall' => sub {
+    my $pages   = schema->resultset('Article')->search({},{
+        order_by => 'id',
+    });
+
+    template 'components/page-listall', {
+        pagelist    => $pages
+    };
+};
+
+any '/page/:url' => sub {
     my $url     = param('url');
-    my $text    = schema->resultset('Article')->find({ url => "$url" });
+    my $text    = schema->resultset('Article')->single({ url => $url });
     
     if (defined($text)) {
         template 'page' => {
             title   => $text->title || $text->url,
+            description => $text->description || "",
             text    => $text,
             url     => $url,
         };
@@ -85,11 +119,11 @@ any '/:url' => sub {
 };
 
 # правка документа 
-fawform '/:url/edit' => {
+fawform '/page/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/page/:url',
-    
     formname    => 'editpage',
+    title       => 'Изменить страничку',
     fields      => [ 
         {
             required    => 1,
@@ -154,7 +188,7 @@ fawform '/:url/edit' => {
         my $faw  = ${$_[1]};
         my $path = params->{url};
         
-        my $text = schema->resultset('Article')->find({ url => $path });
+        my $text = schema->resultset('Article')->single({ url => $path });
         
         # В случае, если это действие get, 
         if ($_[0] eq "get") {
@@ -162,11 +196,11 @@ fawform '/:url/edit' => {
                 # то следует подставить значения по умолчанию из БД.
                 $faw->map_params(
                     url         => $text->url, 
+                    title       => $text->title,
                     content     => $text->text,
                     type        => $text->type,
                     description => $text->description,
                     author      => $text->author,
-                    title       => $text->title,
                 );
             } else {
                 # или же (когда такой записи ещё нет в БД) то просто установить
@@ -188,19 +222,18 @@ fawform '/:url/edit' => {
                 description => params->{description} || "",
                 author      => params->{author} || "",
                 type        => params->{type} || "",
-                text        => params->{content} || "",
+                text        => parsepage(params->{content}) || "",
+                lastmod     => time,
             });
             } catch {
                 return 0;
             };
             return (1, "/page/$path");
         }
-        # Кроме того, мы можем указать вычисляемый путь для перехода при записи/отмене
-        $faw->{redirect} = "/page/$path";
     },
 };
 
-any '/:tag/add' => sub {
+any '/page/:tag/add' => sub {
     my $tag = params->{tag};
     try {
         schema->resultset('Article')->create({ 
@@ -221,16 +254,31 @@ hook before_template_render => sub {
 
 sub news {
     my ( $s, $engine, $out );
-
+    
+    my $lastdate = config->{components}->{documents}->{newsfresh} || 10 * 86400;
+    my $newsfresh = time - $lastdate;
+    
+    warning " ================= $newsfresh : $lastdate ";
+    
     my $items = schema->resultset('Article')->search({
-            type     => "news",
+        -or => [
+            -and => [
+                type    => 'news',
+                lastmod => { '>=' => $newsfresh },
+            ],
+            type    => 'fix',
+        ]
         }, {
             order_by => { -desc => 'id' },
             rows     => 5,
         });
-    $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
-    $engine->process('components/news.tt', { s => $s, articles => $items }, \$out);
-
+    $engine = Template->new({
+        INCLUDE_PATH => $Bin . '/../views/',
+        ENCODING => 'utf8',
+    });
+    $engine->process('components/news.tt', 
+        { s => $s, articles => $items }, 
+        \$out, );
     return $out;
 };
 
@@ -243,6 +291,7 @@ CREATE TABLE article (
     author      varchar(255) DEFAULT 'admin', 
     type        varchar(255), 
     title       varchar(255), 
+    lastmod     int(11) DEFAULT 0,
     PRIMARY KEY (id)
 ) CHARACTER SET = utf8;
 |;

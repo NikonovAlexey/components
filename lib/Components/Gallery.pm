@@ -10,16 +10,114 @@ use Image::Magick;
 use Digest::MD5 qw(md5_hex);
 use FindBin qw($Bin);
 use Try::Tiny;
+use Data::Dump qw(dump);
+
+use Archive::Zip;
 
 our $VERSION = '0.06';
 
-prefix '/gallery';
+prefix '/';
 
-any '/list' => sub {
+=head GALLERY
+
+Взаимодействия с галереями изображений и с картинками.
+
+=cut
+
+=head1 Вспомогательные процедуры
+
+=cut
+
+=head2 gallery
+
+Мы можем захотеть встраивать в нашу страничку определённую галерею. Это
+делается с помощью команды gallery, которая доступна в шаблоне. За вывод в
+шаблон самих рисунков из галереи отвечает этот код.
+
+=cut
+
+sub gallery {
+    my ( $s, $t, $engine, $out );
+    my $items;
+    my $path;
+    
+    ( $s, $t ) = @_; $s ||= ""; 
+    
+    $path = request->{path}; $path =~ s/\/+/-/g; $path =~ s/^-//;
+    if ( -e $Bin . "/../public/images/" . $path . ".jpg" ) {
+        $path = "/images/$path.jpg";
+    } else {
+        $path = config->{components}->{gallery}->{topbanner} || "top-banner";
+        $path = "/images/" . $path . ".jpg";
+    };
+    
+    # это не меню - даже если мы ничего не получили на входе, 
+    # надо вывести хотя бы одну заглушку-изображение. А это поведение
+    # определяется в шаблоне
+    $t ||= "top-banner";
+    
+    if ($s ne "") {
+        $items = schema->resultset('Image')->search({ 
+            alias => $s,
+            type => $t
+        }, {
+            order_by => { -asc => 'id' },
+        });
+        try { if ( $items->count() < 1 ) {
+            $items = schema->resultset('Image')->search({
+                type => $t
+            }, {
+                rows => 5,
+                order_by => 'RAND()',
+            });
+        } catch { $items = schema->resultset('Image')->search({
+                type => $t
+            }, {
+                rows => 5,
+                order_by => 'RAND()',
+            });
+        };
+    };
+    }
+    
+    $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
+    $engine->process('components/gallery.tt', {
+            s       => $s,
+            gallery => $items,
+            path    => $path,
+            rights  => \&rights 
+        }, \$out);
+    
+    return $out;
+}
+
+
+
+=head1 Основные точки взаимодействия
+
+=cut
+
+=head2 *
+
+Закольцовывает страничку на дефолтный шаблон, чтобы не возникало ошибок при
+некорректном доступе.
+
+=cut
+
+any '/gallery/' => sub { redirect '/gallery/list'; };
+
+=head2 list
+
+Выводит перечень галерей изображений.
+
+=cut
+
+any '/gallery/list' => sub {
     my $gallist = schema->resultset('Image')->search(undef, {
         select => [ 'alias', 'type' ],
         distinct => 1,
-        order_by => 'alias',
+        order_by => { -asc => [qw/type alias/] },
+        group_by => [qw/type alias/],
     });
 
     template 'components/gallist' => {
@@ -27,9 +125,142 @@ any '/list' => sub {
     };
 };
 
-any '/:url' => sub {
+=head2 top-banner-all
+
+Создаёт список всех изображений, содержащих в своём типе "top-banner".
+Была создана для проекта man-kmv.
+
+=cut
+
+any '/gallery/top-banner-all' => sub {
+    my $images  = schema->resultset('Image')->search({
+        type    => { like => '%top-banner%' },
+    }, {
+        order_by => 'id',
+    });
+
+    template 'gallery', {
+        list    => $images
+    };
+};
+
+=head2 multiload
+
+Подать много рисунков в одном архиве, чтобы добавить их все разом.
+
+=cut
+
+fawform '/gallery/multiload' => {
+    template    => 'components/renderform',
+    redirect    => '/',
+    formname    => 'gallery-multiload',
+    title       => 'Изменить рисунок в галерее',
+    fields      => [
+    {
+        type    => 'upload',
+        name    => 'imagesarch',
+        label   => 'архив рисунков',
+        note    => 'укажите архив с рисунками, из которых будет создана новая галерея',
+        default => '',
+    },
+    {
+        type    => 'text',
+        name    => 'type',
+        label   => 'тип фотографии',
+        note    => 'к какому типу изображений относится данная картинка (доп.
+        свойство для фильтрации и преобразований)',
+        default => '',
+    },
+    {
+        type    => 'text',
+        name    => 'alias',
+        label   => 'галерея',
+        note    => 'как будет называться галерея (псевдоним раздела)',
+        default => '',
+    }
+    ],
+    buttons     => [
+        { name        => 'submit', value       => 'Применить' },
+        { name        => 'submit', value       => 'Отменить' },
+    ],
+    before      => sub {
+        my $faw  = ${$_[1]};
+        my $alias   = params->{alias};
+        my $type    = params->{type};
+        
+        if ($_[0] eq "get") {
+            $faw->map_params(
+                type        => "pagesphoto",
+                alias       => "",
+            );
+        };
+        
+        if ($_[0] eq "post") {
+            return(1, "/gallery/" . params->{alias} ) if (params->{submit} eq "Отменить");
+            my $imagesarch = request->{uploads}->{imagesarch} || "";
+            if (defined( $imagesarch ) && ($imagesarch ne "") ) {
+                warning " ====== try to read " . dump($imagesarch);
+            }
+            return(0, '') if ($imagesarch->{tempname} eq "");
+            my $zip = Archive::Zip->new($imagesarch->{tempname});
+            my $tint = time();
+            foreach($zip->members()) {
+                my $galtype  = $type || "common";
+                my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
+                
+                my $upload   = request->{uploads}->{imagename};
+                
+                my $filename = $_->fileName();
+                my $filetemp = $_->fileName();
+                my $filesize = $_->compressedSize();
+                
+                my ( $image, $x, $y, $k );
+                
+                $filename    =~ /\.(\w{2,4})$/;
+                my $fileext  = lc($1) || "png";
+                
+                my $destpath =  "/images/galleries/" . $galtype . "/";
+                my $destfile = "" . md5_hex($filetemp . $filesize);
+                my $abspath  = $Bin . "/../public" . $destpath;
+                if ( ! -e $abspath ) { mkdir $abspath; }
+                
+                my $destination = "$abspath$destfile.$fileext";
+                $zip->extractMemberWithoutPaths( $_, $destination );
+                
+                # прочтём рисунок и его параметры
+                $image      = Image::Magick->new;
+                $image->Read($destination);
+                # масштабируем и запишем
+                $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
+                $image->Write($destination);
+                
+                schema->resultset('Image')->create({
+                    filename    => "$destpath$destfile.$fileext",
+                    imagename   => $_->fileName(),
+                    remark      => '',
+                    type        => $type,
+                    alias       => $alias,
+                });
+            }
+            return(0, '');
+        }
+    },
+};
+
+=head2 :url
+
+Каждый рисунок содержит псевдоним (alias). Эта процедура вытягивает все
+рисунки, у которых псевдоним совпадает с заданным на входе.
+
+=cut
+
+any '/gallery/:url' => sub {
     my $url     = param('url');
-    my $text    = schema->resultset('Image')->search({ alias => "$url" });
+    my $text    = schema->resultset('Image')->search({ 
+            alias => "$url" 
+        }, {
+            order_by => "id"
+        });
     
     if (defined($text)) {
         template 'gallery' => {
@@ -44,24 +275,32 @@ any '/:url' => sub {
     }
 };
 
-any '/:url/add' => sub {
+=head2 :url/add
+
+В указанную галерею добавляются записи о новых изображениях и выполняется
+переход в точку редактирования рисунка (загрузки и установки его свойств).
+
+=cut
+
+any '/gallery/:url/add' => sub {
     my $url = param('url');
-    
-    if ( rights('admin') ) {
-        my $me = schema->resultset('Image')->create({
-            filename    => '',
-            imagename   => '',
-            remark      => '',
-            type        => "$url",
-            alias       => "$url",
-        });
-        redirect "gallery/" .$me->id. "/edit";
-    } else {
-        redirect "gallery/$url";
-    };
+    my $me = schema->resultset('Image')->create({
+        filename    => '',
+        imagename   => '',
+        remark      => '',
+        type        => "$url",
+        alias       => "$url",
+    });
+    redirect "gallery/" .$me->id. "/edit";
 };
 
-any '/:url/delete' => sub {
+=head2 :url/delete
+
+Указанный по ID рисунок будет удалён.
+
+=cut
+
+any '/gallery/:url/delete' => sub {
     my $parent = "/";
     my $item   = schema->resultset('Image')->find({ id => params->{url} }) || undef;
     if ( rights('admin') ) { 
@@ -75,11 +314,17 @@ any '/:url/delete' => sub {
     redirect $parent;
 };
 
-fawform '/:id/edit' =>  {
+=head2 :id/edit
+
+Выполняет правку рисунка, в т.ч. и загрузку нового.
+
+=cut
+
+fawform '/gallery/:id/edit' =>  {
     template    => 'components/renderform-gallery',
     redirect    => '/',
-
     formname    => 'image-edit',
+    title       => 'Изменить рисунок в галерее',
     fields      => [
     {
         type    => 'text',
@@ -130,6 +375,10 @@ fawform '/:id/edit' =>  {
             name        => 'submit',
             value       => 'Применить'
         },
+        {
+            name        => 'submit',
+            value       => 'Отменить'
+        },
     ],
     before      => sub {
         my $faw  = ${$_[1]};
@@ -165,6 +414,7 @@ fawform '/:id/edit' =>  {
         };
 
         if ($_[0] eq "post") {
+            return(1, "/gallery/" . params->{alias} ) if (params->{submit}  eq "Отменить");
             if (defined( request->{uploads}->{imagename} )) {
                 my $upload = request->{uploads}->{imagename};
                 
@@ -175,7 +425,7 @@ fawform '/:id/edit' =>  {
                 my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
                 my ( $image, $x, $y, $k );
                 
-                $filename    =~ /\.(\w{3})/;
+                $filename    =~ /\.(\w{2,4})$/;
                 my $fileext  = lc($1) || "png";
                 
                 my $destpath =  "/images/galleries/" . $galtype . "/";
@@ -212,36 +462,15 @@ fawform '/:id/edit' =>  {
     },
 };
 
-# Подготовка общей инфы для всех страничек
+=head2 before_template_render
+
+Внедрение процедур для использования в шаблонах.
+
+=cut
+
 hook before_template_render => sub {
     my ( $tokens ) = @_;
     $tokens->{gallery} = \&gallery;
-};
-
-sub gallery {
-    my ( $s, $t, $engine, $out );
-    my $items;
-
-    ( $s, $t ) = @_; $s ||= ""; 
-    # это не меню - даже если мы ничего не получили на входе, 
-    # надо вывести хотя бы одну заглушку-изображение. А это поведение
-    # определяется в шаблоне
-    $t ||= "top-banner";
-    
-    if ($s ne "") {
-        $items = schema->resultset('Image')->search({ 
-            alias => $s,
-            type => $t
-        }, {
-            order_by => { -asc => 'id' },
-        });
-    } else {
-        $items = "";
-    }
-    $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
-    $engine->process('components/gallery.tt', { s => $s, gallery => $items, rights => \&rights }, \$out);
-
-    return $out;
 };
 
 our $createsql = qq|

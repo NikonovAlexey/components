@@ -5,19 +5,31 @@ use Dancer::Session::Memcached;
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
+use Dancer::Plugin::FlashNote;
 
 use Digest::MD5 qw(md5_hex);
 use Try::Tiny;
 
 our $VERSION = '0.05';
 
-prefix '/user';
+prefix '/';
 
-fawform '/login' => {
+sub halt_session {
+    session user => {
+        id      => "",
+        login => "",
+        roles => "guest",
+        email => "",
+        fullname => "guest",
+    };
+};
+
+fawform '/user/login' => {
     template    => 'components/renderform',
     redirect    => '/',
 
     formname    => 'loginform',
+    title       => 'Вход в систему',
     fields      => [
         {
             type        => 'text',
@@ -38,43 +50,56 @@ fawform '/login' => {
             value       => 'Войти'
         },
     ],
-    after       => sub { if ($_[0] eq "post") {
-        my $uname = params->{username};
-        my $upass = params->{password};
+    before       => sub { if ($_[0] eq "post") {
+        my $uname   = params->{username};
+        my $upass   = params->{password};
         my $salt    = config->{salt} || "";
+        my $user;
         # выкинуть нафиг все не-латинские символы
         $upass =~ /([A-Za-z0-9]*)/; $upass = $1 || "";
         $upass = md5_hex(md5_hex($upass) . $salt);
-        my $user = schema->resultset('User')->find({
-            login => $uname,
-            password => $upass 
-        });
+        
+        try {
+            $user = schema->resultset('User')->single({ 
+                login    => $uname, 
+                password => $upass,
+            }) || 0;
 
-        if ( (defined $user) && ( $user->id > 0 ) ) {
+            warning " ============ try to compare " . $user->login . " == $uname ";
+        } catch {
+            warning " ========= problems while find a user $uname:$upass";
+            flash "Такой пользователь не найден, либо пароль был указан
+            некорректно";
+            halt_session();
+            return(1, '/user/login');
+        };
+        
+        if (( $user != 0 ) && ( $user->id > 0 ) ){
             session user => {
+                id    => $user->id,
                 login => $user->login,
                 roles => $user->role,
                 email => $user->email,
                 fullname => $user->fullname,
                 };
+            session lifetime => time + config->{session_timeout};
+            session longsession => 0;
+            return(1, '/');
         } else {
-            session user => {
-                login => "",
-                roles => "guest",
-                email => "",
-                fullname => "guest",
-            };
+            warning " ========= problems while find a user $uname:$upass";
+            flash "Ваш логин в системе не обнаружен.";
         };
+        halt_session();
+        return(1, '/user/login');
     } },
 };
 
-any '/logout' => sub {
-    #session->destroy;
-    session user => { roles => "guest" };
+any '/user/logout' => sub {
+    halt_session();
     redirect '/';
 };
 
-any '/list' => sub {
+any '/user/list' => sub {
     my $ulist = schema->resultset('User')->search({ 
         id => { '>' => 0 }
     }, {
@@ -86,7 +111,7 @@ any '/list' => sub {
     };
 };
 
-any '/add' => sub {
+any '/user/add' => sub {
     my $ulist = schema->resultset('User')->create({
         login   => 'new',
         role    => 'user',
@@ -95,7 +120,7 @@ any '/add' => sub {
     redirect '/';
 };
 
-fawform '/:id/edit' => {
+fawform '/user/:id/edit' => {
     template    => 'components/renderform',
     redirect    => '/user/list',
 
