@@ -123,8 +123,8 @@ any '/user/add' => sub {
 fawform '/user/:id/edit' => {
     template    => 'components/renderform',
     redirect    => '/user/list',
-
     formname    => 'edituser',
+
     fields      => [
         {
             type        => 'text',
@@ -151,6 +151,7 @@ fawform '/user/:id/edit' => {
             note        => 'полное величание человека.',
         },
     ],
+
     buttons     => [
         {
             name        => 'submit',
@@ -161,6 +162,7 @@ fawform '/user/:id/edit' => {
             value       => 'отменить'
         },
     ],
+
     before      => sub {
         my $faw  = ${$_[1]};
         my $id   = params->{id};

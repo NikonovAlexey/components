@@ -92,7 +92,6 @@ sub gallery {
 }
 
 
-
 =head1 Основные точки взаимодействия
 
 =cut
@@ -439,8 +438,11 @@ fawform '/gallery/:id/edit' =>  {
                 $image      = Image::Magick->new;
                 $image->Read($filetemp);
                 # масштабируем и запишем
+                $image->Resize(geometry => "800x600") if ($resizeto ne "noresize");
+                $image->Write("$abspath${destfile}_full.$fileext");
+                # масштабируем и запишем
                 $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
-                $image->Write($abspath . $destfile . ".$fileext");
+                $image->Write($abspath . $destfile . "." . $fileext);
 
                 $imagefile = $destpath . $destfile . "." . $fileext;
                 $imagename = params->{imagename};

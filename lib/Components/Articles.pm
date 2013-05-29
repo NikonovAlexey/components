@@ -13,6 +13,8 @@ use Data::Dump qw(dump);
 use FindBin qw($Bin);
 use Encode;
 
+use Archive::Zip;
+use XML::LibXML::Reader;
 use Try::Tiny;
 
 our $VERSION = '0.05';
@@ -27,7 +29,7 @@ sub img_by_num {
     my ( $src, $id ) = @_;
     my $image;
     my $file = "";
-
+    
     try {
         $image = schema->resultset('Image')->find({ id => $id }) || 0;
         $file = $image->filename || "";
@@ -39,6 +41,25 @@ sub img_by_num {
     return "<img src='$file'>";
 }
 
+sub img_by_num_lb {
+    my ( $src, $id ) = @_;
+    my $image;
+    my $file = "";
+    my ( $name, $ext );
+
+    try {
+        $image = schema->resultset('Image')->find({ id => $id }) || 0;
+        $file = $image->filename || "";
+        $file =~ /(.*)(\.\w{2,4})$/;
+        ( $name, $ext ) = ( $1, $2 );
+    } catch {
+        return "$src$id";
+    };
+    
+    return "$src$id" if $file eq "";
+    return "<a href='${name}_full$ext' rel='lightbox'><img src='$file'></a>";
+}
+
 sub link_to_text {
     my ( $src, $link ) = @_;
     return "<a href='/page/$link'>$link</a>";
@@ -48,6 +69,7 @@ sub parsepage {
     my $text = $_[0];
     
     $text =~ s/(img\s*=\s*)(\d*)/&img_by_num($1,$2)/egm;
+    $text =~ s/(imglb\s*=\s*)(\w*)/&img_by_num_lb($1,$2)/egm;
     $text =~ s/(link\s*=\s*)(\w*)/&link_to_text($1,$2)/egm;
     return $text;
 }
@@ -118,13 +140,13 @@ any '/page/:url' => sub {
     };
 };
 
-# правка документа 
 fawform '/page/:url/edit' => {
     template    => 'components/renderform',
     redirect    => '/page/:url',
     formname    => 'editpage',
     title       => 'Изменить страничку',
-    fields      => [ 
+
+    fields      => [
         {
             required    => 1,
             type        => 'text',
@@ -168,6 +190,7 @@ fawform '/page/:url/edit' => {
             default     => '',
         },
     ],
+
     buttons     => [
         {
             name        => 'submit',
@@ -179,6 +202,7 @@ fawform '/page/:url/edit' => {
             classes     => ['warn'],
         },
     ],
+
     before      => sub {
         # Очень интересный пример работы с вычисляемыми путями. Нам может
         # потребоваться передавать в пути изменяемые аргументы и менять
@@ -244,6 +268,149 @@ any '/page/:tag/add' => sub {
         warning " article with $tag already defined ";
     };
     redirect "/page/$tag/edit";
+};
+
+sub importimage {
+    my ( $zip, $name, $type, $gal ) = @_;
+    
+    my $galtype  = $type || "common";
+    my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
+    
+    my $upload   = request->{uploads}->{imagename};
+    
+    my $cnt = schema->resultset('Image')->search({
+        imagename   => $name,
+    });
+    
+    if ( $cnt->count > 0 ) {
+        $cnt = schema->resultset('Image')->search({
+            imagename   => $name,
+        });
+        return($cnt->first->filename);
+    }
+    
+    my $filename = $name;
+    my $filetemp = $name;
+    #my $filesize = $->compressedSize();
+    
+    my ( $image, $x, $y, $k );
+    
+    $filename    =~ /\.(\w{2,4})$/;
+    my $fileext  = lc($1) || "png";
+    
+    my $destpath =  "/images/galleries/" . $galtype . "/";
+    my $destfile = "" . md5_hex($filetemp);
+    my $abspath  = $Bin . "/../public" . $destpath;
+    if ( ! -e $abspath ) { mkdir $abspath; }
+    
+    my $destination = "$abspath$destfile.$fileext";
+    $zip->extractMemberWithoutPaths( $name, $destination );
+    
+    # прочтём рисунок и его параметры
+    $image      = Image::Magick->new;
+    $image->Read($destination);
+    # масштабируем и запишем
+    $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
+    $image->Write($destination);
+    
+    schema->resultset('Image')->create({
+        filename    => "$destpath$destfile.$fileext",
+        imagename   => $name,
+        remark      => '',
+        type        => $type,
+        alias       => $gal,
+    });
+    return "$destpath$destfile.$fileext";
+}
+
+fawform '/page/:url/attach' => {
+    template    => 'components/renderform',
+    redirect    => '/page/:url',
+    formname    => 'editpage',
+    title       => 'Добавить текст',
+
+    fields      => [
+    {
+        type    => 'upload',
+        name    => 'document',
+        label   => 'документ *.odt',
+        note    => 'укажите документ в формате OpenOffice/LibreOffice для загрузки вместе с рисунками.',
+        default => '',
+    },
+    {
+        type    => 'text',
+        name    => 'type',
+        label   => 'тип фотографии',
+        note    => 'к какому типу изображений будут относиться картинки (доп.
+        свойство для фильтрации и преобразований)',
+        default => '',
+    },
+    {
+        type    => 'text',
+        name    => 'alias',
+        label   => 'галерея',
+        note    => 'как будет называться галерея (псевдоним раздела), в который
+        должны быть помещены картинки',
+        default => '',
+    }
+    ],
+    
+    buttons  => [
+        { name    => 'submit', value   => 'Применить', classes => [ 'btn', 'btn-success' ], },
+        { name    => 'submit', value   => 'Отменить', classes => ['btn'], },
+    ],
+    
+    before => sub {
+        my $faw = ${ $_[1] };
+        my $path = params->{url};
+        my $text = schema->resultset('Article')->single({ url => $path });
+        
+        if ( $_[0] eq "get" ) { 
+            $faw->empty_form(); 
+            $faw->map_params(
+                type        => "pagesphoto",
+                alias       => "",
+            );
+            $faw->{action} = request->path;
+        }
+        
+        if ( $_[0] eq "post" ) {
+            if ( params->{submit} eq "Отменить" ) { return ( 1, '/page/' . $path ) }
+            if ( ! defined($text->id) ) {
+                return (0, '');
+            }
+            
+            my $imagesarch = request->{uploads}->{document} || "";
+            return(0, '') if ($imagesarch->{tempname} eq "");
+            
+            my $zip = Archive::Zip->new($imagesarch->{tempname});
+            my $tint = time();
+            
+            my $doc = $zip->contents("content.xml");
+            my $xml = XML::LibXML::Reader->new(string => $doc);
+            my $docpage = "";
+            $xml->nextPatternMatch("//office\:document-content/office\:body");
+            while( my $node = $xml->read() ) {
+                # получим адрес изображения в файле, который нужно вставить в документ
+                if ( $xml->name eq "draw:image" ) {
+                    my $ref = importimage($zip, $xml->getAttribute("xlink:href"), params->{type}, params->{alias} );
+                    $docpage .= "<p><img src='" . $ref  . "'></p>";
+                }
+                # получим текст из атрибута
+                if ( $xml->hasValue() ) { 
+                    $docpage .= "<p>" . $xml->value . "</p>";
+                }
+            }
+            
+            $docpage = $text->text . $docpage;
+            $text->update({
+                text        => $docpage,
+                lastmod     => time,
+            });
+            
+            return ( 1, '/page/' . $path );
+        }
+    },
 };
 
 # Подготовка общей инфы для всех страничек

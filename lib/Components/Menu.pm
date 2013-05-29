@@ -205,7 +205,7 @@ sub menu_struct {
     
     ( $s ) = @_; $s ||= "";
     my ( $id, $parent );
-    my $menu_struct;
+    my $menu_struct;# = Data::SimplePath->new();
     
     my @roles = roles_unwrap();
     
@@ -220,29 +220,31 @@ sub menu_struct {
         # если родителя нет - элемент корневой и сам 
         # является для других родителем
         try { $parent = $z->parent->id } catch { $parent = "" };
+        #$menu_struct->set("$parent", z_unwrap($z));
+        
         if ( $parent ne "" ) {
             # вклеить элемент в нужную часть дерева
             $el = h_stickin($menu_struct, $parent);
-            $el->{$id} = z_unwrap($z);
+            $el->{array}->{$id} = z_unwrap($z);
         } else {
             $menu_struct->{$id} = z_unwrap($z);
         }
+
     }
     
-    warning " ================================== " . 
-        dump(h_root($menu_struct, $s));
     try {
+        #warning " ================================== " .  dump(h_root($menu_struct, $s)->{array});
         $engine = Template->new({
             INCLUDE_PATH => $Bin . '/../views/',
             ENCODING => 'utf8',
         });
-        $engine->process('components/menu_struct.tt', {
+        $engine->process("components/menu_struct_$s.tt", {
             s => $s,
-            menu => h_root($menu_struct, $s),
+            menu => h_root($menu_struct, $s)->{array},
             rights => \&rights
         }, \$out);
     } catch {
-        $out = "123";
+        $out = "[menu-stub]";
     };
     
     return $out;
