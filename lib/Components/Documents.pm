@@ -14,7 +14,7 @@ use Digest::MD5 qw(md5_hex);
 use Data::Dump qw(dump);
 use Encode qw(encode_utf8);
 
-our $VERSION = '0.02';
+our $VERSION = '0.07';
 
 prefix '/';
 
@@ -200,15 +200,10 @@ sub documents {
     });
     return "" if ( $items->count == 0 );
     
-    $engine = Template->new({
-        INCLUDE_PATH => $Bin . '/../views/',
-        ENCODING => 'utf8',
-    });
-    $engine->process('components/documents.tt', {
+    return template_process('documents.tt', {
             documents   => $items,
-            rights      => \&rights 
-        }, \$out);
-    return $out;
+            rights      => \&rights,
+        });
 };
 
 our $createsql = qq|

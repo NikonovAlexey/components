@@ -10,7 +10,7 @@ use Try::Tiny;
 use Data::Dump qw(dump);
 use FindBin qw($Bin); 
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
 prefix '/';
 
@@ -167,19 +167,19 @@ sub menu {
     try {
         my $items = schema->resultset('Menu')->search({ 
                 'menus.roles' => { like => [ @roles ] },
-                'me.alias' => { like => "$s" },
+                'me.alias'    => { like => "$s" },
             }, {
-                join => 'menus',
+                join     => 'menus',
                 'select' => ['menus.id', 'menus.name', 'menus.url',
                         'menus.alias', 'menus.type', 'menus.note'],
                 'as'     => ['id', 'name', 'url', 'alias', 'type', 'note'],
                 order_by => { -asc => 'menus.weight' },
             });
-        $engine = Template->new({
-            INCLUDE_PATH => $Bin . '/../views/',
-            ENCODING => 'utf8',
-        });
-        $engine->process('components/menu.tt', { s => $s, menu => $items, rights => \&rights }, \$out);
+        $out = template_process('menu.tt', { 
+                s => $s,
+                menu => $items, 
+                rights => \&rights
+            });
     } catch {
         $out = "";
     };
@@ -232,22 +232,11 @@ sub menu_struct {
 
     }
     
-    try {
-        #warning " ================================== " .  dump(h_root($menu_struct, $s)->{array});
-        $engine = Template->new({
-            INCLUDE_PATH => $Bin . '/../views/',
-            ENCODING => 'utf8',
-        });
-        $engine->process("components/menu_struct_$s.tt", {
+    return template_process("menu_struct_$s.tt", {
             s => $s,
             menu => h_root($menu_struct, $s)->{array},
             rights => \&rights
-        }, \$out);
-    } catch {
-        $out = "[menu-stub]";
-    };
-    
-    return $out;
+        });
 }
 
 =head2 menu_position 
@@ -286,20 +275,16 @@ sub menu_position {
         $out2       = menu_position($parent->alias, $recursion_level+1);
 
         if ($current->name ne "") {
-            $engine = Template->new({
-                INCLUDE_PATH => $Bin . '/../views/',
-                ENCODING => 'utf8',
-            });
-            $engine->process('components/menu_position.tt', { 
+            $out = template_process('menu_position.tt', { 
                 s => $s,
                 recursion_level => $recursion_level,
-                currentmenu => $current },
-                \$out);
+                currentmenu => $current 
+                });
         } else {
             $out = "";
         }
     }
-
+    
     return $out2 . $out;
 }
 

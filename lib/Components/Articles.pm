@@ -17,7 +17,7 @@ use Archive::Zip;
 use XML::LibXML::Reader;
 use Try::Tiny;
 
-our $VERSION = '0.05';
+our $VERSION = '0.07';
 
 prefix '/';
 
@@ -425,8 +425,6 @@ sub news {
     my $lastdate = config->{components}->{documents}->{newsfresh} || 10 * 86400;
     my $newsfresh = time - $lastdate;
     
-    warning " ================= $newsfresh : $lastdate ";
-    
     my $items = schema->resultset('Article')->search({
         -or => [
             -and => [
@@ -439,14 +437,11 @@ sub news {
             order_by => { -desc => 'id' },
             rows     => 5,
         });
-    $engine = Template->new({
-        INCLUDE_PATH => $Bin . '/../views/',
-        ENCODING => 'utf8',
-    });
-    $engine->process('components/news.tt', 
-        { s => $s, articles => $items }, 
-        \$out, );
-    return $out;
+    
+    return template_process('news.tt', { 
+            s => $s,
+            articles => $items
+        });
 };
 
 our $createsql = qq|
