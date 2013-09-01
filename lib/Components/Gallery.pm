@@ -80,15 +80,12 @@ sub gallery {
     };
     }
     
-    $engine = Template->new({ INCLUDE_PATH => $Bin . '/../views/' });
-    $engine->process('components/gallery.tt', {
-            s       => $s,
-            gallery => $items,
-            path    => $path,
-            rights  => \&rights 
-        }, \$out);
-    
-    return $out;
+    return template_process('gallery.tt', {
+        s       => $s,
+        gallery => $items,
+        path    => $path,
+        rights  => \&rights 
+    });
 }
 
 

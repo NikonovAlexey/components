@@ -12,6 +12,7 @@ use FindBin qw($Bin);
 use File::Copy "cp";
 use Digest::MD5 qw(md5_hex);
 use Data::Dump qw(dump);
+use Encode qw(encode_utf8);
 
 our $VERSION = '0.02';
 
@@ -88,7 +89,7 @@ fawform '/docs/:alias/add' => {
             
             $upload      = request->{uploads}->{docname};
             $srcfile     = $upload->{tempname};
-            $srcfile        =~ /\.(\w{2,5})$/;
+            $srcfile     =~ /\.(\w{2,5})$/;
             $fileext     = lc($1) || "odt";
             $alias       = params->{alias};
             
@@ -96,7 +97,7 @@ fawform '/docs/:alias/add' => {
                             || "upload-docs";
             $destination    = "/$destination/$alias/";
             $absolute    = "$Bin/../public$destination";
-            $destfile    = "" . md5_hex($srcfile, $upload->{size}) .  ".$fileext";
+            $destfile    = "" . md5_hex(encode_utf8($srcfile), $upload->{size}) .  ".$fileext";
             
             try {
                 if ( ! -e $absolute ) { mkdir $absolute };
