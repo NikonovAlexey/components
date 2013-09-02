@@ -14,7 +14,7 @@ use Data::Dump qw(dump);
 
 use Archive::Zip;
 
-our $VERSION = '0.01';
+our $VERSION = '0.08';
 
 prefix '/';
 

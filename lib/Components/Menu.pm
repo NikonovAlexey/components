@@ -10,7 +10,7 @@ use Try::Tiny;
 use Data::Dump qw(dump);
 use FindBin qw($Bin); 
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 prefix '/';
 

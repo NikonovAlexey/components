@@ -5,16 +5,20 @@ use Dancer ':syntax';
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
+use Dancer::Plugin::ImageWork;
 
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
 use FindBin qw($Bin);
 use Try::Tiny;
 use Data::Dump qw(dump);
+use Encode qw(encode_utf8);
+use File::Glob ':glob';
+use File::Copy qw(copy);
 
 use Archive::Zip;
 
-our $VERSION = '0.06';
+our $VERSION = '0.08';
 
 prefix '/';
 
@@ -182,18 +186,20 @@ fawform '/gallery/multiload' => {
     before      => sub {
         my $faw  = ${$_[1]};
         my $alias   = params->{alias};
-        my $type    = params->{type};
+        my $type    = params->{type} || "pagesphoto";
+        my $gallery = params->{gallery} || "";
         
         if ($_[0] eq "get") {
             $faw->map_params(
-                type        => "pagesphoto",
-                alias       => "",
+                type        => $type,
+                alias       => $gallery,
             );
         };
         
         if ($_[0] eq "post") {
             return(1, "/gallery/" . params->{alias} ) if (params->{submit} eq "Отменить");
             my $imagesarch = request->{uploads}->{imagesarch} || "";
+            my $gallery = params->{alias};
             if (defined( $imagesarch ) && ($imagesarch ne "") ) {
                 warning " ====== try to read " . dump($imagesarch);
             }
@@ -202,43 +208,23 @@ fawform '/gallery/multiload' => {
             my $tint = time();
             foreach($zip->members()) {
                 my $galtype  = $type || "common";
-                my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
-                
-                my $upload   = request->{uploads}->{imagename};
                 
                 my $filename = $_->fileName();
-                my $filetemp = $_->fileName();
-                my $filesize = $_->compressedSize();
+                my ( $path, $file, $ext ) = img_fileparse( $filename );
+                my $tempname = "/tmp/" . md5_hex(encode_utf8(localtime . $filename)) . ".$ext";
+                $zip->extractMemberWithoutPaths( $_, $tempname );
                 
-                my ( $image, $x, $y, $k );
-                
-                $filename    =~ /\.(\w{2,4})$/;
-                my $fileext  = lc($1) || "png";
-                
-                my $destpath =  "/images/galleries/" . $galtype . "/";
-                my $destfile = "" . md5_hex($filetemp . $filesize);
-                my $abspath  = $Bin . "/../public" . $destpath;
-                if ( ! -e $abspath ) { mkdir $abspath; }
-                
-                my $destination = "$abspath$destfile.$fileext";
-                $zip->extractMemberWithoutPaths( $_, $destination );
-                
-                # прочтём рисунок и его параметры
-                $image      = Image::Magick->new;
-                $image->Read($destination);
-                # масштабируем и запишем
-                $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
-                $image->Write($destination);
-                
+                ( $path, $file, $ext ) = img_resize_by_rules( $tempname, $gallery );
+
                 schema->resultset('Image')->create({
-                    filename    => "$destpath$destfile.$fileext",
-                    imagename   => $_->fileName(),
+                    filename    => img_relative_folder($gallery) . "$file.$ext",
+                    imagename   => $filename,
                     remark      => '',
-                    type        => $type,
+                    type        => $galtype,
                     alias       => $alias,
                 });
             }
-            return(0, '');
+            return(1, '/gallery/' . $gallery);
         }
     },
 };
@@ -299,13 +285,11 @@ any '/gallery/:url/add' => sub {
 any '/gallery/:url/delete' => sub {
     my $parent = "/";
     my $item   = schema->resultset('Image')->find({ id => params->{url} }) || undef;
-    if ( rights('admin') ) { 
-        if (defined($item)) { 
-            $parent  = "/gallery/" . $item->alias || "/";
-            my $file    = $item->filename;
-            $item->delete; 
-            unlink $Bin . "/../public" . $file;
-        };
+    if (defined($item)) { 
+        $parent  = "/gallery/" . $item->alias || "/";
+        my $files = $Bin . "/../public" . img_convert_name($item->filename, "*");
+        $item->delete; 
+        unlink glob $files;
     };
     redirect $parent;
 };
@@ -412,40 +396,18 @@ fawform '/gallery/:id/edit' =>  {
         if ($_[0] eq "post") {
             return(1, "/gallery/" . params->{alias} ) if (params->{submit}  eq "Отменить");
             if (defined( request->{uploads}->{imagename} )) {
-                my $upload = request->{uploads}->{imagename};
+                my $galtype  = params->{type} || "common";
+                my $upload   = request->{uploads}->{imagename};
+                
+                my $filetemp = $upload->{tempname};
                 
                 my $filename = $upload->{filename};
-                my $filetemp = $upload->{tempname};
-                my $filesize = $upload->{size};
-                my $galtype  = params->{type} || "common";
-                my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
-                my ( $image, $x, $y, $k );
-                
-                $filename    =~ /\.(\w{2,4})$/;
-                my $fileext  = lc($1) || "png";
-                
-                my $destpath =  "/images/galleries/" . $galtype . "/";
-                my $destfile = "" . md5_hex($filetemp . $filesize);
-                my $abspath  = $Bin . "/../public" . $destpath;
-                if ( ! -e $abspath ) { mkdir $abspath; }
-                
-                #move($filetemp, $abspath . $destfile);
-                
-                # прочтём рисунок и его параметры
-                $image      = Image::Magick->new;
-                $image->Read($filetemp);
-                # масштабируем и запишем
-                $image->Resize(geometry => "800x600") if ($resizeto ne "noresize");
-                $image->Write("$abspath${destfile}_full.$fileext");
-                # масштабируем и запишем
-                $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
-                $image->Write($abspath . $destfile . "." . $fileext);
+                my ( $path, $file, $ext ) = img_fileparse( $filename );
+                ( $path, $file, $ext ) = img_resize_by_rules( $filetemp, $galtype );
 
-                $imagefile = $destpath . $destfile . "." . $fileext;
-                $imagename = params->{imagename};
                 $imagegall->update({
-                    filename    => $imagefile,
-                    imagename   => $imagename,
+                    filename    => img_relative_folder($galtype) . "$file.$ext",
+                    imagename   => $filename,
                 });
             };
                 
@@ -459,6 +421,39 @@ fawform '/gallery/:id/edit' =>  {
         
         $faw->{action}   = $path;
     },
+};
+
+=head2 :id/refresh
+
+Обновить изображение согласно новым правилам.
+
+Сначала следует найти изображение наибольшего размера, а затем преобразовать
+его в масштабируемый вид.
+
+=cut
+
+get '/gallery/:id/refresh' => sub {
+    my $id      = params->{id};
+    my $item    = schema->resultset('Image')->find({
+            id => $id }) || undef;
+    my $parent  = "/";
+    my $files;
+    my ( $path, $file, $ext );
+    my ( $bestfile, $size ) = ( "", 0 );
+    if ( defined($item) ) {
+        $parent = "/gallery/" . $item->alias || "/";
+        ( $path, $file, $ext ) = img_fileparse($item->filename);
+        $files = $Bin . "/../public" . $path . $file . "*." . $ext;
+        warning " ============= $files ";
+        foreach my $tempname ( glob($files) ) {
+            if ( -s $tempname > $size ) { $bestfile = $tempname; $size = -s $tempname; }
+        }
+        warning " ============= use $bestfile for resize ";
+        copy $bestfile, "/tmp/$file.$ext";
+        unlink glob $files;
+        img_resize_by_rules( "/tmp/$file.$ext", $item->alias );
+    };
+    redirect $parent;
 };
 
 =head2 before_template_render

@@ -10,7 +10,7 @@ use Dancer::Plugin::FlashNote;
 use Digest::MD5 qw(md5_hex);
 use Try::Tiny;
 
-our $VERSION = '0.05';
+our $VERSION = '0.08';
 
 prefix '/';
 

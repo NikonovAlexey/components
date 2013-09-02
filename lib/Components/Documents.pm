@@ -14,7 +14,7 @@ use Digest::MD5 qw(md5_hex);
 use Data::Dump qw(dump);
 use Encode qw(encode_utf8);
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 prefix '/';
 

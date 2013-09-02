@@ -6,6 +6,7 @@ use Dancer ':syntax';
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
+use Dancer::Plugin::ImageWork;
 
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
@@ -17,7 +18,7 @@ use Archive::Zip;
 use XML::LibXML::Reader;
 use Try::Tiny;
 
-our $VERSION = '0.07';
+our $VERSION = '0.08';
 
 prefix '/';
 
@@ -43,21 +44,20 @@ sub img_by_num {
 
 sub img_by_num_lb {
     my ( $src, $id ) = @_;
-    my $image;
+    my ( $image, $suff );
     my $file = "";
     my ( $name, $ext );
 
     try {
         $image = schema->resultset('Image')->find({ id => $id }) || 0;
-        $file = $image->filename || "";
-        $file =~ /(.*)(\.\w{2,4})$/;
-        ( $name, $ext ) = ( $1, $2 );
+        $file  = $image->filename || "";
+        $suff  = $image->alias;
     } catch {
         return "$src$id";
     };
     
     return "$src$id" if $file eq "";
-    return "<a href='${name}_full$ext' rel='lightbox'><img src='$file'></a>";
+    return "<a href='" . img_convert_name($file, $suff) . "' rel='lightbox'><img internalid='$id' src='" . img_convert_name($file, "small") . "'></a>";
 }
 
 sub link_to_text {
