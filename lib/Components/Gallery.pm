@@ -92,6 +92,36 @@ sub gallery {
     });
 }
 
+=head image_rand
+
+Запросить количество случайных изображений из галереи.
+
+Галерею можно не указывать - будут запрошены все изображения с сайта.
+
+Количество тоже можно не указывать - будет запрошено только одно изображение.
+
+=cut
+
+sub image_rand {
+    my $count   = shift || 1;
+    my $gallery = shift || "";
+    my $template= shift || "";
+    
+    my $images  = schema->resultset('Image')->search({
+        alias => { like => "%$gallery%" }
+    }, {
+        rows => $count,
+        order_by => "RAND()"
+    });
+    
+    $template = ($template ne "") ? "image_rand_$template" : "image_rand";
+    
+    return template_process("$template.tt", {
+        images_list => $images,
+        img_convert_name => \&img_convert_name,
+    });
+};
+
 
 =head1 Основные точки взаимодействия
 
@@ -104,7 +134,9 @@ sub gallery {
 
 =cut
 
-any '/gallery/' => sub { redirect '/gallery/list'; };
+any '/gallery/' => sub { 
+    redirect '/gallery/list'; 
+};
 
 =head2 list
 
@@ -465,6 +497,7 @@ get '/gallery/:id/refresh' => sub {
 hook before_template_render => sub {
     my ( $tokens ) = @_;
     $tokens->{gallery} = \&gallery;
+    $tokens->{image_rand} = \&image_rand;
 };
 
 our $createsql = qq|

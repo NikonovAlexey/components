@@ -99,7 +99,7 @@ any '/user/logout' => sub {
     redirect '/';
 };
 
-any '/user/list' => sub {
+any '/user/listall' => sub {
     my $ulist = schema->resultset('User')->search({ 
         id => { '>' => 0 }
     }, {
@@ -122,7 +122,7 @@ any '/user/add' => sub {
 
 fawform '/user/:id/edit' => {
     template    => 'components/renderform',
-    redirect    => '/user/list',
+    redirect    => '/user/listall',
     formname    => 'edituser',
 
     fields      => [
