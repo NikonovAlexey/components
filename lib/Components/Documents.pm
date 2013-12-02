@@ -6,6 +6,7 @@ use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
 use Dancer::Plugin::FlashNote;
+use Dancer::Plugin::Common;
 
 use Try::Tiny;
 use FindBin qw($Bin);

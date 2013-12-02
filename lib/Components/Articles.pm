@@ -7,6 +7,7 @@ use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
 use Dancer::Plugin::ImageWork;
+use Dancer::Plugin::Common;
 
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
@@ -25,54 +26,6 @@ prefix '/';
 =head ARTICLES
 
 =cut
-
-sub img_by_num {
-    my ( $src, $id ) = @_;
-    my $image;
-    my $file = "";
-    
-    try {
-        $image = schema->resultset('Image')->find({ id => $id }) || 0;
-        $file = $image->filename || "";
-    } catch {
-        return "$src$id";
-    };
-    
-    return "$src$id" if $file eq "";
-    return "<img src='$file'>";
-}
-
-sub img_by_num_lb {
-    my ( $src, $id ) = @_;
-    my ( $image, $suff );
-    my $file = "";
-    my ( $name, $ext );
-
-    try {
-        $image = schema->resultset('Image')->find({ id => $id }) || 0;
-        $file  = $image->filename || "";
-        $suff  = $image->alias;
-    } catch {
-        return "$src$id";
-    };
-    
-    return "$src$id" if $file eq "";
-    return "<a href='" . img_convert_name($file, $suff) . "' rel='lightbox'><img internalid='$id' src='" . img_convert_name($file, "small") . "'></a>";
-}
-
-sub link_to_text {
-    my ( $src, $link ) = @_;
-    return "<a href='/page/$link'>$link</a>";
-}
-
-sub parsepage {
-    my $text = $_[0];
-    
-    $text =~ s/(img\s*=\s*)(\d*)/&img_by_num($1,$2)/egm;
-    $text =~ s/(imglb\s*=\s*)(\w*)/&img_by_num_lb($1,$2)/egm;
-    $text =~ s/(link\s*=\s*)(\w*)/&link_to_text($1,$2)/egm;
-    return $text;
-}
 
 any '/page/sitemap.xml' => sub {
     my $articles = schema->resultset('Article')->search({
@@ -119,6 +72,70 @@ any '/page/listall' => sub {
     template 'components/page-listall', {
         pagelist    => $pages
     };
+};
+
+post '/page/create' => sub {
+    my $pagename    = params->{pagename} || "";
+    my $translname;
+    
+    $pagename =~ s/  / /g;
+    $pagename =~ s/^ *//g;
+    $pagename =~ s/ *$//g;
+    
+    redirect "/page/listall" if ($pagename eq "");
+    $translname  = transliterate($pagename) || "";
+    
+    try {
+        schema->resultset('Article')->create({ 
+            title   => $pagename,
+            url     => $translname,
+            author  => session->{user}->{fullname},
+        });
+    } catch {
+        warning " article with $pagename already defined ";
+    };
+    redirect "/page/$translname/edit";
+};
+
+any '/page/:tag/add' => sub {
+    my $pagename    = params->{tag} || "";
+    my $translname;
+    
+    $pagename =~ s/  / /g;
+    $pagename =~ s/^ *//g;
+    $pagename =~ s/ *$//g;
+    
+    redirect "/page/listall" if ($pagename eq "");
+    $translname  = transliterate($pagename) || "";
+    
+    try {
+        schema->resultset('Article')->create({ 
+            title   => $pagename,
+            url     => $translname,
+            author  => session->{user}->{fullname},
+        });
+    } catch {
+        warning " article with $pagename already defined ";
+    };
+    redirect "/page/$translname/edit";
+};
+
+=head2 delete :id page
+
+=cut
+
+any '/page/:pageid/delete' => sub {
+    my $pageid = params->{pageid} || 0;
+    
+    try {
+        my $page = schema->resultset('Article')->find({
+            id      => $pageid
+        });
+        $page->delete;
+    } catch {
+        warning " ========= try to delete # $pageid page ";
+    };
+    redirect "/page/listall";
 };
 
 any '/page/:url' => sub {
@@ -257,26 +274,8 @@ fawform '/page/:url/edit' => {
     },
 };
 
-any '/page/:tag/add' => sub {
-    my $tag = params->{tag};
-    try {
-        schema->resultset('Article')->create({ 
-            url     => $tag,
-            author  => session->{user}->{fullname},
-        });
-    } catch {
-        warning " article with $tag already defined ";
-    };
-    redirect "/page/$tag/edit";
-};
-
 sub importimage {
     my ( $zip, $name, $type, $gal ) = @_;
-    
-    my $galtype  = $type || "common";
-    my $resizeto = config->{plugins}->{gallery}->{$galtype} || "601x182";
-    
-    my $upload   = request->{uploads}->{imagename};
     
     my $cnt = schema->resultset('Image')->search({
         imagename   => $name,
@@ -286,41 +285,25 @@ sub importimage {
         $cnt = schema->resultset('Image')->search({
             imagename   => $name,
         });
-        return($cnt->first->filename);
+        return($cnt->first->filename, $cnt->first->id);
     }
     
+    my $galtype  = $type || "common";
     my $filename = $name;
-    my $filetemp = $name;
-    #my $filesize = $->compressedSize();
-    
-    my ( $image, $x, $y, $k );
-    
-    $filename    =~ /\.(\w{2,4})$/;
-    my $fileext  = lc($1) || "png";
-    
-    my $destpath =  "/images/galleries/" . $galtype . "/";
-    my $destfile = "" . md5_hex($filetemp);
-    my $abspath  = $Bin . "/../public" . $destpath;
-    if ( ! -e $abspath ) { mkdir $abspath; }
-    
-    my $destination = "$abspath$destfile.$fileext";
-    $zip->extractMemberWithoutPaths( $name, $destination );
-    
-    # прочтём рисунок и его параметры
-    $image      = Image::Magick->new;
-    $image->Read($destination);
-    # масштабируем и запишем
-    $image->Resize(geometry => $resizeto) if ($resizeto ne "noresize");
-    $image->Write($destination);
-    
-    schema->resultset('Image')->create({
-        filename    => "$destpath$destfile.$fileext",
-        imagename   => $name,
+    my ( $path, $file, $ext ) = img_fileparse( $filename );
+    my $tempname = "/tmp/" . md5_hex(encode_utf8(localtime . $filename)) . ".$ext";
+    $zip->extractMemberWithoutPaths( $name, $tempname );
+    ( $path, $file, $ext ) = img_resize_by_rules( $tempname, $gal );
+
+    my $id = schema->resultset('Image')->create({
+        filename    => img_relative_folder($gal) . "$file.$ext",
+        imagename   => $filename,
         remark      => '',
-        type        => $type,
+        type        => $galtype,
         alias       => $gal,
     });
-    return "$destpath$destfile.$fileext";
+
+    return ("$path$file.$ext", $id->id);
 }
 
 fawform '/page/:url/attach' => {
@@ -369,7 +352,7 @@ fawform '/page/:url/attach' => {
             $faw->empty_form(); 
             $faw->map_params(
                 type        => "pagesphoto",
-                alias       => "",
+                alias       => $path,
             );
             $faw->{action} = request->path;
         }
@@ -389,12 +372,12 @@ fawform '/page/:url/attach' => {
             my $doc = $zip->contents("content.xml");
             my $xml = XML::LibXML::Reader->new(string => $doc);
             my $docpage = "";
-            $xml->nextPatternMatch("//office\:document-content/office\:body");
+            $xml->nextPatternMatch("//office:document-content/office:body");
             while( my $node = $xml->read() ) {
                 # получим адрес изображения в файле, который нужно вставить в документ
                 if ( $xml->name eq "draw:image" ) {
-                    my $ref = importimage($zip, $xml->getAttribute("xlink:href"), params->{type}, params->{alias} );
-                    $docpage .= "<p><img src='" . $ref  . "'></p>";
+                    my ( $ref, $id ) = importimage($zip, $xml->getAttribute("xlink:href"), params->{type}, params->{alias} );
+                    $docpage .= img_by_num_lb("imglb=", $id);
                 }
                 # получим текст из атрибута
                 if ( $xml->hasValue() ) { 
@@ -414,6 +397,7 @@ fawform '/page/:url/attach' => {
 };
 
 # Подготовка общей инфы для всех страничек
+
 hook before_template_render => sub {
     my ( $tokens ) = @_;
     $tokens->{news} = \&news;

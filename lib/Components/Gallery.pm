@@ -1,11 +1,13 @@
 package Gallery;
 
+use utf8;
 use Dancer ':syntax';
 
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
 use Dancer::Plugin::ImageWork;
+use Dancer::Plugin::Common;
 
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
@@ -100,6 +102,9 @@ sub gallery {
 
 Количество тоже можно не указывать - будет запрошено только одно изображение.
 
+Дополнительно можно указать шаблон, в который будет производиться отрисовка
+полученной галереи.
+
 =cut
 
 sub image_rand {
@@ -116,7 +121,7 @@ sub image_rand {
     
     $template = ($template ne "") ? "image_rand_$template" : "image_rand";
     
-    return template_process("$template.tt", {
+    return template_process("${template}.tt", {
         images_list => $images,
         img_convert_name => \&img_convert_name,
     });
@@ -147,7 +152,6 @@ any '/gallery/' => sub {
 any '/gallery/list' => sub {
     my $gallist = schema->resultset('Image')->search(undef, {
         select => [ 'alias', 'type' ],
-        distinct => 1,
         order_by => { -asc => [qw/type alias/] },
         group_by => [qw/type alias/],
     });
@@ -233,7 +237,7 @@ fawform '/gallery/multiload' => {
             my $imagesarch = request->{uploads}->{imagesarch} || "";
             my $gallery = params->{alias};
             if (defined( $imagesarch ) && ($imagesarch ne "") ) {
-                warning " ====== try to read " . dump($imagesarch);
+                #warning " ====== try to read " . dump($imagesarch);
             }
             return(0, '') if ($imagesarch->{tempname} eq "");
             my $zip = Archive::Zip->new($imagesarch->{tempname});
@@ -247,7 +251,7 @@ fawform '/gallery/multiload' => {
                 $zip->extractMemberWithoutPaths( $_, $tempname );
                 
                 ( $path, $file, $ext ) = img_resize_by_rules( $tempname, $gallery );
-
+                
                 schema->resultset('Image')->create({
                     filename    => img_relative_folder($gallery) . "$file.$ext",
                     imagename   => $filename,

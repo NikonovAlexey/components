@@ -6,6 +6,7 @@ use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
 use Dancer::Plugin::FlashNote;
+use Dancer::Plugin::Common;
 
 use Digest::MD5 qw(md5_hex);
 use Try::Tiny;
@@ -65,7 +66,7 @@ fawform '/user/login' => {
                 password => $upass,
             }) || 0;
 
-            warning " ============ try to compare " . $user->login . " == $uname ";
+            #warning " ============ try to compare " . $user->login . " == $uname ";
         } catch {
             warning " ========= problems while find a user $uname:$upass";
             flash "Такой пользователь не найден, либо пароль был указан
@@ -201,5 +202,6 @@ CREATE TABLE users (
     PRIMARY KEY (id)
 ) CHARACTER SET = utf8;
 |;
+
 
 true;

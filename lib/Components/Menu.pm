@@ -5,6 +5,7 @@ use Dancer ':syntax';
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
+use Dancer::Plugin::Common;
 
 use Try::Tiny;
 use Data::Dump qw(dump);
@@ -160,12 +161,14 @@ any". Роль администратора разворачивается в с
 sub menu {
     my ( $s, $engine, $out );
     
-    ( $s ) = @_; $s ||= ""; return "" if ($s eq "");
+    ( $s ) = @_; $s ||= ""; 
+    return "" if ($s eq "");
     
     my @roles = roles_unwrap();
+    my $items;
     
     try {
-        my $items = schema->resultset('Menu')->search({ 
+        $items = schema->resultset('Menu')->search({ 
                 'menus.roles' => { like => [ @roles ] },
                 'me.alias'    => { like => "$s" },
             }, {
@@ -175,16 +178,15 @@ sub menu {
                 'as'     => ['id', 'name', 'url', 'alias', 'type', 'note'],
                 order_by => { -asc => 'menus.weight' },
             });
-        $out = template_process('menu.tt', { 
+    } catch {
+        warning " ========== oooops! wrong menu items";
+    };
+    
+    return template_process('menu.tt', { 
                 s => $s,
                 menu => $items, 
                 rights => \&rights
             });
-    } catch {
-        $out = "";
-    };
-
-    return $out;
 }
 
 =head2 menu_struct
@@ -326,8 +328,8 @@ any '/menu/sitemap' => sub {
 =cut
 
 any '/menu/listall' => sub {
-    template 'components/sitemap', {
-    top => schema->resultset('Menu')->search(undef, {
+    template 'components/menu_listall', {
+    top => schema->resultset('Menu')->search({}, {
         order_by => 'weight'
     })
     };

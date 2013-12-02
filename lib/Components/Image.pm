@@ -5,6 +5,8 @@ use Dancer ':syntax';
 use Dancer::Plugin::DBIC;
 use Dancer::Plugin::FAW;
 use Dancer::Plugin::uRBAC;
+use Dancer::Plugin::ImageWork;
+use Dancer::Plugin::Common;
 
 use Image::Magick;
 use Digest::MD5 qw(md5_hex);
